@@ -97,13 +97,26 @@ export const streamZippedPlaylist = async (
   format: "mp3" | "mp4_360" | "mp4_720" | "mp4_1080",
   res: any
 ) => {
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="playlist.zip"`);
+
   const archive = archiver("zip", { zlib: { level: 9 } });
+
+  archive.on("error", (err: any) => {
+    console.error("Archiver error:", err);
+    if (!res.headersSent) {
+      res.status(500).send("Error streaming archive.");
+    } else {
+      res.destroy(); // forcibly close if headers already sent
+    }
+  });
+
   archive.pipe(res);
 
   const data: any = await youtubedl(playlistUrl, {
     dumpSingleJson: true,
     flatPlaylist: true,
-  } as any);
+  });
 
   const videos = data.entries || [];
 
@@ -141,6 +154,11 @@ export const streamZippedPlaylist = async (
     ];
 
     const ytdlProcess = spawn(binaryPath, flags);
+
+    ytdlProcess.stderr.on("data", (data) => {
+      console.error(`yt-dlp error: ${data}`);
+    });
+
     const pass = new PassThrough();
     ytdlProcess.stdout.pipe(pass);
     archive.append(pass, { name: filename });
